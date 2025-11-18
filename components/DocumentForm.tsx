@@ -33,12 +33,17 @@ const DocumentForm: React.FC<DocumentFormProps> = ({ docType, onSubmit, onCancel
         to: '',
         responsible: '',
         notes: '',
+        circulate: false,
     });
     const [error, setError] = useState('');
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        const target = e.target as HTMLInputElement;
+        const { name, value, type, checked } = target;
+        setFormData(prev => ({ 
+            ...prev, 
+            [name]: type === 'checkbox' ? checked : value 
+        }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -66,7 +71,22 @@ const DocumentForm: React.FC<DocumentFormProps> = ({ docType, onSubmit, onCancel
                 <InputField label="เรื่อง" name="subject" value={formData.subject} onChange={handleChange} required />
                 
                 {docType === DocumentType.Book && (
-                     <InputField label="ถึง" name="to" value={formData.to} onChange={handleChange} required />
+                    <>
+                        <InputField label="ถึง" name="to" value={formData.to} onChange={handleChange} required />
+                        <div className="flex items-center pt-2">
+                            <input
+                                type="checkbox"
+                                id="circulate"
+                                name="circulate"
+                                checked={formData.circulate}
+                                onChange={handleChange}
+                                className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shadow-sm"
+                            />
+                            <label htmlFor="circulate" className="ml-3 block text-base font-medium text-gray-700">
+                                เวียน
+                            </label>
+                        </div>
+                    </>
                 )}
                 
                 <InputField label="ผู้รับผิดชอบ/ผู้จัดทำ" name="responsible" value={formData.responsible} onChange={handleChange} required />
