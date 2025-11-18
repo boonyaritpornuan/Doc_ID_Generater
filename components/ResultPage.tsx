@@ -51,7 +51,7 @@ const ResultPage: React.FC<ResultPageProps> = ({ document, onGoHome }) => {
         <div className="animate-fade-in w-full">
             <div className="text-center mb-8">
                 <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
-                     <svg className="h-8 w-8 text-green-600" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <svg className="h-8 w-8 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
                 </div>
@@ -67,6 +67,7 @@ const ResultPage: React.FC<ResultPageProps> = ({ document, onGoHome }) => {
                 <DetailItem label="เรื่อง" value={document.subject} isHighlight={document.type === DocumentType.Notice} />
                 <DetailItem label="ลงวันที่" value={formatDate(document.date)} />
                 <DetailItem label="ถึง" value={document.to} />
+                <DetailItem label="การเวียน" value={document.circulate} />
                 <DetailItem label="ผู้รับผิดชอบ/ผู้จัดทำ" value={document.responsible} />
                 <DetailItem label="หมายเหตุ" value={document.notes} />
             </div>
