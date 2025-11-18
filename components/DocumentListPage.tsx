@@ -55,7 +55,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
     );
 
     const hasFilters = searchTerm || startDate || endDate;
-    const colSpan = selectedType === DocumentType.Notice ? 4 : 5;
+    const colSpan = selectedType === DocumentType.Book ? 6 : (selectedType === DocumentType.Notice ? 4 : 5);
 
     return (
         <div className="animate-fade-in w-full">
@@ -119,6 +119,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                     <thead className="border-b bg-gray-50">
                         <tr>
                             <th className="p-4 font-semibold text-gray-600">ประเภท</th>
+                            {selectedType === DocumentType.Book && <th className="p-4 font-semibold text-gray-600">เวียน</th>}
                             {selectedType !== DocumentType.Notice && <th className="p-4 font-semibold text-gray-600">เลขที่</th>}
                             <th className="p-4 font-semibold text-gray-600">ลงวันที่</th>
                             <th className="p-4 font-semibold text-gray-600">เรื่อง</th>
@@ -136,6 +137,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                             filteredDocuments.map((doc, index) => (
                                 <tr key={doc.id} className={`border-b ${index % 2 === 0 ? '' : 'bg-blue-50/20'} hover:bg-blue-100/50 transition-colors`}>
                                     <td className="p-4 text-gray-800">{doc.type}</td>
+                                    {selectedType === DocumentType.Book && <td className="p-4 text-gray-900 font-medium text-center">{doc.circulate}</td>}
                                     {selectedType !== DocumentType.Notice && <td className="p-4 text-gray-900 font-medium">{doc.number}</td>}
                                     <td className="p-4 text-gray-700 whitespace-nowrap">{formatDate(new Date(doc.date))}</td>
                                     <td className="p-4 text-gray-800">{doc.subject}</td>
