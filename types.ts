@@ -15,6 +15,7 @@ export interface Document {
   to?: string;
   responsible: string;
   notes?: string;
+  circulate?: string;
 }
 
 export interface FormData {
@@ -23,4 +24,5 @@ export interface FormData {
     to: string;
     responsible: string;
     notes: string;
+    circulate: boolean;
 }
