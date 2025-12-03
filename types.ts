@@ -19,10 +19,16 @@ export interface Document {
 }
 
 export interface FormData {
-    date: string;
-    subject: string;
-    to: string;
-    responsible: string;
-    notes: string;
-    circulate: boolean;
+  date: string;
+  subject: string;
+  to?: string;
+  responsible: string;
+  notes?: string;
+  circulate: boolean;
+}
+
+export interface User {
+  email: string;
+  name: string;
+  picture: string;
 }
