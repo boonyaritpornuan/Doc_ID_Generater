@@ -110,96 +110,24 @@ function parseSheetData_(sheet) {
                 const value = row[headerMap[header]];
                 if ((header === 'date' || header === 'timestamp')) {
                     const dateVal = new Date(value);
-                    if (isNaN(dateVal.getTime())) throw new Error(`Invalid date format for header '${header}'.`);
-                    doc[header] = dateVal;
+                    if (isNaN(dateVal.getTime())) {
+                         // Fallback: try to see if it's a string date
+                         doc[header] = null; 
+                    } else {
+                         doc[header] = dateVal;
+                    }
                 } else {
-                    doc[header] = value || null; // Return null for empty cells
+                    // Force String conversion for number/subject to handle auto-converted types safely
+                    doc[header] = (value === null || value === undefined) ? null : String(value);
                 }
             });
             documents.push(doc);
 
         } catch (e) {
-            Logger.log(`Skipping problematic row ${index + 2} in sheet "${sheet.getName()}": ${e.message}. Row data: [${row.join(', ')}]`);
+            Logger.log(`Skipping problematic row ${index + 2} in sheet "${sheet.getName()}": ${e.message}.`);
         }
     });
     return documents;
-}
-
-
-function getDocuments_() {
-    const docTypes = ['หนังสือส่ง', 'คำสั่ง', 'ประกาศ'];
-    let allDocuments = [];
-
-    docTypes.forEach(type => {
-        try {
-            const sheet = getSheetByType_(type);
-            const docsFromSheet = parseSheetData_(sheet);
-            allDocuments = allDocuments.concat(docsFromSheet);
-        } catch (e) {
-            Logger.log("Could not get or parse documents for type: " + type + ". Error: " + e.message);
-        }
-    });
-    
-    return allDocuments.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-}
-
-
-function generateDocumentNumber_(docType, docDate, allDocuments) {
-    const yearBuddhist = docDate.getFullYear() + 543;
-    let lastDocNumber = 0;
-
-    const relevantDocs = allDocuments.filter(doc => {
-        try {
-            if (!doc || doc.type !== docType || !(doc.date instanceof Date) || isNaN(doc.date.getTime())) return false;
-            
-            if (docType === 'หนังสือส่ง') {
-                return doc.date.getFullYear() === docDate.getFullYear();
-            } else {
-                if (!doc.number) return false;
-                const match = doc.number.match(/\/(\d{4})$/);
-                const docYear = match ? parseInt(match[1], 10) : 0;
-                return docYear === yearBuddhist;
-            }
-        } catch(e) {
-            return false;
-        }
-    });
-
-    if (relevantDocs.length > 0) {
-        const numbers = relevantDocs.map(doc => {
-            if (!doc.number) return 0;
-            let numPart = 0;
-            try {
-                let match;
-                if (docType === 'หนังสือส่ง') {
-                    match = doc.number.match(/\/(\d+)$/);
-                } else if (docType === 'คำสั่ง') {
-                    match = doc.number.match(/^(\d+)/);
-                } else if (docType === 'ประกาศ') {
-                    match = doc.number.match(/(\d+)\/\d{4}$/);
-                }
-                
-                if (match && match[1]) {
-                    numPart = parseInt(match[1], 10);
-                }
-            } catch (e) {}
-            return isNaN(numPart) ? 0 : numPart;
-        });
-        lastDocNumber = Math.max(0, ...numbers);
-    }
-
-    const newNumber = lastDocNumber + 1;
-
-    switch (docType) {
-        case 'หนังสือส่ง':
-            return `ศธ 04115.0316/${newNumber}`;
-        case 'คำสั่ง':
-            return `${newNumber}/${yearBuddhist}`;
-        case 'ประกาศ':
-            return `ประกาศโรงเรียนบ้านหนองแห้ง เรื่อง ${newNumber}/${yearBuddhist}`;
-        default:
-            return `${docType}-${newNumber}/${yearBuddhist}`;
-    }
 }
 
 
@@ -208,7 +136,7 @@ function addDocument_(docType, formData) {
     lock.waitLock(30000); 
 
     try {
-        const allDocuments = getDocuments_(); // Fetch all docs for consistent numbering
+        const allDocuments = getDocuments_(); 
         
         const docDate = new Date(formData.date);
         if (isNaN(docDate.getTime())) throw new Error("Invalid date provided in form data.");
@@ -222,24 +150,37 @@ function addDocument_(docType, formData) {
             number: newDocNumber,
             date: docDate,
             subject: formData.subject || '',
-            to: (docType === 'หนังสือส่ง' ? formData.to : null), // Set to null if not applicable
+            to: (docType === 'หนังสือส่ง' ? formData.to : null), 
             responsible: formData.responsible || '',
             notes: formData.notes || '',
         };
 
         const sheet = getSheetByType_(docType);
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        
+        // Prepare row data
         const newRow = headers.map(header => {
-            if (header === 'number' && newDocument[header]) {
-                return "'" + newDocument[header];
-            }
-            return newDocument[header] || '';
+             if (header === 'timestamp' || header === 'date') {
+                 return newDocument[header];
+             }
+             return newDocument[header] || '';
         });
 
+        // Append the row
         sheet.appendRow(newRow);
+
+        // FORCE FORMATTING: Ensure the 'number' cell is strictly Plain Text
+        const lastRow = sheet.getLastRow();
+        const numberColIndex = headers.indexOf('number') + 1;
+        if (numberColIndex > 0) {
+            const numberCell = sheet.getRange(lastRow, numberColIndex);
+            numberCell.setNumberFormat("@"); // Set directly to Plain Text
+            numberCell.setValue(newDocument.number); // Write value again to strip any auto-formatting
+        }
         
         return newDocument;
     } finally {
         lock.releaseLock();
     }
 }
+

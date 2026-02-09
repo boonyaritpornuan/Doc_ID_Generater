@@ -4,7 +4,7 @@
 // Fix: Explicitly typing SCRIPT_URL as `string` to prevent a TypeScript error.
 // The error occurs on line 23 because comparing a constant string literal to another string literal
 // is flagged as an impossible condition, as the value is known at compile time.
-const SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbwD2kXt3vxSALqAYuMsGedFZ9iBvr7Jl0VK5MPUpd_R6vJBzAyovMlV0B5cd6lZAa12/exec'; 
+const SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbw84XBYDMT0QAncLDZZFgjlCJvImYgZzmst0x-Ruzr0tLM3iq3mfLsOA9_pyumBvwg/exec';
 // ===================================================================================
 
 
@@ -17,7 +17,7 @@ const handleResponse = async (response: Response) => {
     }
     const data = await response.json();
     if (data.error) {
-         throw new Error(`Backend error: ${data.error}`);
+        throw new Error(`Backend error: ${data.error}`);
     }
     return data;
 }
@@ -57,8 +57,8 @@ export const getDocuments = async (): Promise<Document[]> => {
     checkScriptUrl();
     try {
         const response = await fetch(SCRIPT_URL, {
-             method: 'POST',
-             headers: {
+            method: 'POST',
+            headers: {
                 'Content-Type': 'text/plain;charset=utf-8',
             },
             body: JSON.stringify({ action: 'getDocuments' }),
