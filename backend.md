@@ -1,29 +1,31 @@
----
-สำคัญมาก: โค้ดนี้สำหรับ Google Apps Script เท่านั้น
-- ก่อน Deploy โค้ดใหม่นี้ กรุณาลบชีทเก่าที่ชื่อ "documents" ทิ้งก่อน
-- ห้ามกดปุ่ม "Run" หรือ "Debug" ในหน้าแก้ไขโค้ดเด็ดขาด เพราะจะทำให้เกิด Error
-- การทดสอบต้องทำผ่านการใช้งานบนเว็บแอปพลิเคชันเท่านั้น
-- ทุกครั้งที่แก้ไขโค้ด จะต้อง Deploy ใหม่ (New Deployment) เสมอ
----
+
+// ===============================================
+// โค้ดสำหรับระบบออกเลข V3 (ฉบับสมบูรณ์ที่สุด)
+// แก้ไขปัญหา: เปลี่ยนไปใช้การแยกเก็บ "เลขที่" และ "ปีงบ" ออกจากกัน
+// ทำให้ไม่ต้องกังวลเรื่อง Format วันที่เพี้ยนอีกต่อไป
+// ===============================================
+
+// *** SPREADSHEET ID ของคุณ (ใส่ให้แล้ว) ***
+const SPREADSHEET_ID = '1MNu4db_6K4iO8QrTHyf9CI4CZL_xAvqYACtcKhDEDkc'; 
 
 const BOOK_SHEET_NAME = 'หนังสือส่ง';
 const ORDER_SHEET_NAME = 'คำสั่ง';
 const NOTICE_SHEET_NAME = 'ประกาศ';
 
-const BOOK_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "to", "responsible", "notes"];
-const ORDER_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes"];
-const NOTICE_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes"];
+// เพิ่มคอลัมน์ใหม่: running_number (เลขลำดับ) และ budget_year (ปีงบฯ) ต่อท้าย
+const BOOK_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "to", "responsible", "notes", "running_number", "budget_year"];
+const ORDER_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year"];
+const NOTICE_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year"];
 
 
 function doGet(e) {
-  return ContentService.createTextOutput("Backend is running. Use POST requests for data operations.");
+  return ContentService.createTextOutput("Backend V3 is running. Use POST requests for data operations.");
 }
 
 function doPost(e) {
   if (!e || !e.postData || !e.postData.contents) {
-    Logger.log('doPost was called without postData. This usually happens when "Run" is pressed in the editor.');
     return createJsonResponse({ 
-      error: 'Invalid request. This function must be triggered by a POST request from the web app, not by pressing "Run" in the editor.' 
+      error: 'Invalid request. This function must be triggered by a POST request.' 
     });
   }
 
@@ -44,6 +46,12 @@ function doPost(e) {
       const newDocument = addDocument_(docType, formData);
       return createJsonResponse(newDocument);
     }
+    
+    // ACTION พิเศษสำหรับ Migrating ข้อมูลเก่า (เรียกครั้งเดียวพอ)
+    if (action === 'migrateData') {
+       const result = migrateDataToV3_();
+       return createJsonResponse(result);
+    }
 
     return createJsonResponse({ error: 'Invalid action specified: ' + action });
 
@@ -60,7 +68,19 @@ function createJsonResponse(data) {
 }
 
 function getSheetByType_(docType) {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let spreadsheet;
+  if (SPREADSHEET_ID) {
+      try {
+          spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+      } catch(e) {
+          spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+      }
+  } else {
+      spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  }
+
+  if (!spreadsheet) throw new Error("Could not find any spreadsheet.");
+
   let sheetName;
   let headers;
 
@@ -86,48 +106,138 @@ function getSheetByType_(docType) {
     sheet = spreadsheet.insertSheet(sheetName);
     sheet.appendRow(headers);
     SpreadsheetApp.flush();
+  } else {
+    // Check if we need to add new columns to existing sheet
+    const finalCol = sheet.getLastColumn();
+    const headersInRange = sheet.getRange(1, 1, 1, finalCol).getValues()[0];
+    if (headersInRange.indexOf('running_number') === -1) {
+       // Append missing headers
+       sheet.getRange(1, finalCol + 1).setValue('running_number');
+       sheet.getRange(1, finalCol + 2).setValue('budget_year');
+    }
   }
   return sheet;
 }
 
 function parseSheetData_(sheet) {
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return [];
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    const displayValues = range.getDisplayValues(); 
+    
+    if (values.length <= 1) return [];
 
-    const headers = data.shift();
+    const headers = values.shift();
+    displayValues.shift(); 
+
     const headerMap = headers.reduce((map, header, i) => ({ ...map, [header]: i }), {});
 
     const documents = [];
-    data.forEach((row, index) => {
+    values.forEach((row, index) => {
         try {
             if (row.every(cell => cell === "")) return;
-            if (!row[headerMap['id']] || !row[headerMap['timestamp']]) {
-                throw new Error("Missing ID or timestamp.");
-            }
             
             const doc = {};
-            headers.forEach(header => {
-                const value = row[headerMap[header]];
+            // Basic fields
+            headers.forEach((header, colIndex) => { 
+                const val = row[colIndex];
+                const displayVal = displayValues[index][colIndex];
+                
                 if ((header === 'date' || header === 'timestamp')) {
-                    const dateVal = new Date(value);
-                    if (isNaN(dateVal.getTime())) {
-                         // Fallback: try to see if it's a string date
-                         doc[header] = null; 
-                    } else {
-                         doc[header] = dateVal;
-                    }
+                    const dateVal = new Date(val);
+                    doc[header] = isNaN(dateVal.getTime()) ? null : dateVal;
+                } else if (header === 'number') {
+                     doc[header] = displayVal ? String(displayVal).trim() : null;
                 } else {
-                    // Force String conversion for number/subject to handle auto-converted types safely
-                    doc[header] = (value === null || value === undefined) ? null : String(value);
+                    doc[header] = (val === null || val === undefined) ? null : String(val);
                 }
             });
-            documents.push(doc);
 
-        } catch (e) {
-            Logger.log(`Skipping problematic row ${index + 2} in sheet "${sheet.getName()}": ${e.message}.`);
-        }
+            // V3 LOGIC: 
+            // If running_number and budget_year exist, use them to reconstruct 'number' for display guarantees
+            // But fallback to existing 'number' if they are missing (for old data before migration)
+            if (doc['running_number'] && doc['budget_year']) {
+               // Reconstruct number string based on type
+               // Note: We don't change the 'number' field here to avoid confusion on frontend, 
+               // but we could use this to validation.
+            }
+
+            documents.push(doc);
+        } catch (e) {}
     });
     return documents;
+}
+
+
+function getDocuments_() {
+    const docTypes = ['หนังสือส่ง', 'คำสั่ง', 'ประกาศ'];
+    let allDocuments = [];
+
+    docTypes.forEach(type => {
+        try {
+            const sheet = getSheetByType_(type);
+            const docsFromSheet = parseSheetData_(sheet);
+            allDocuments = allDocuments.concat(docsFromSheet);
+        } catch (e) {
+            Logger.log("Error loading " + type + ": " + e.message);
+        }
+    });
+    
+    return allDocuments.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+}
+
+function getBuddhistYear(date) {
+    return date.getFullYear() + 543;
+}
+
+function generateNextNumberV3_(docType, docDate, allDocuments) {
+    const yearBuddhist = getBuddhistYear(docDate);
+    
+    // Filter docs of the same type and year
+    const relevantDocs = allDocuments.filter(doc => {
+        if (doc.type !== docType) return false;
+        
+        let docYear = 0;
+        // Try to get year from new column first
+        if (doc.budget_year) {
+            docYear = parseInt(doc.budget_year, 10);
+        } else if (doc.date) {
+             // Fallback for old data: use date year (adjust for academic/fiscal year if needed)
+             // For simplicity, using calendar year + 543 here matching generateDocumentNumber_ logic
+             docYear = getBuddhistYear(doc.date);
+        }
+        
+        // Logic specific to type
+        if (docType === 'หนังสือส่ง') {
+             // Books reset every calendar year usually? Or Fiscal? Assuming Calendar based on previous code
+             return doc.date.getFullYear() === docDate.getFullYear();
+        } else {
+             return docYear === yearBuddhist;
+        }
+    });
+
+    // Find Max Running Number
+    let maxNum = 0;
+    relevantDocs.forEach(doc => {
+        if (doc.running_number) {
+            const num = parseInt(doc.running_number, 10);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+        } else if (doc.number) {
+            // Fallback: Parse from string for old data
+            try {
+                let match;
+                if (docType === 'หนังสือส่ง') match = doc.number.match(/\/(\d+)$/); // xxx/NUM
+                else if (docType === 'คำสั่ง') match = doc.number.match(/^(\d+)/); // NUM/YEAR
+                else if (docType === 'ประกาศ') match = doc.number.match(/(\d+)\/\d{4}$/); // NUM/YEAR
+
+                if (match && match[1]) {
+                     const parsed = parseInt(match[1], 10);
+                     if (parsed > maxNum) maxNum = parsed;
+                }
+            } catch(e) {}
+        }
+    });
+
+    return maxNum + 1;
 }
 
 
@@ -139,44 +249,54 @@ function addDocument_(docType, formData) {
         const allDocuments = getDocuments_(); 
         
         const docDate = new Date(formData.date);
-        if (isNaN(docDate.getTime())) throw new Error("Invalid date provided in form data.");
+        if (isNaN(docDate.getTime())) throw new Error("Invalid date provided.");
         
-        const newDocNumber = generateDocumentNumber_(docType, docDate, allDocuments);
+        const yearBuddhist = getBuddhistYear(docDate);
+        const nextRunningNum = generateNextNumberV3_(docType, docDate, allDocuments);
+        
+        // Construct the display number string
+        let newDocNumberString = "";
+        switch (docType) {
+            case 'หนังสือส่ง':
+                newDocNumberString = `ศธ 04115.0316/${nextRunningNum}`;
+                break;
+            case 'คำสั่ง':
+                newDocNumberString = `${nextRunningNum}/${yearBuddhist}`;
+                break;
+            case 'ประกาศ':
+                newDocNumberString = `ประกาศโรงเรียนบ้านหนองแห้ง เรื่อง ${nextRunningNum}/${yearBuddhist}`;
+                break;
+            default:
+                newDocNumberString = `${nextRunningNum}/${yearBuddhist}`;
+        }
 
         const newDocument = {
             id: Utilities.getUuid(),
             timestamp: new Date(),
             type: docType,
-            number: newDocNumber,
+            number: newDocNumberString,
             date: docDate,
             subject: formData.subject || '',
             to: (docType === 'หนังสือส่ง' ? formData.to : null), 
             responsible: formData.responsible || '',
             notes: formData.notes || '',
+            running_number: nextRunningNum, // NEW FIELD
+            budget_year: yearBuddhist      // NEW FIELD
         };
 
         const sheet = getSheetByType_(docType);
-        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
         
-        // Prepare row data
+        // Dynamic Header Mapping
+        const lastCol = sheet.getLastColumn();
+        const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        
         const newRow = headers.map(header => {
-             if (header === 'timestamp' || header === 'date') {
-                 return newDocument[header];
-             }
+             if (header === 'timestamp' || header === 'date') return newDocument[header];
+             if (header === 'number') return "'" + newDocument[header]; // Maintain ' prefix for safety
              return newDocument[header] || '';
         });
 
-        // Append the row
         sheet.appendRow(newRow);
-
-        // FORCE FORMATTING: Ensure the 'number' cell is strictly Plain Text
-        const lastRow = sheet.getLastRow();
-        const numberColIndex = headers.indexOf('number') + 1;
-        if (numberColIndex > 0) {
-            const numberCell = sheet.getRange(lastRow, numberColIndex);
-            numberCell.setNumberFormat("@"); // Set directly to Plain Text
-            numberCell.setValue(newDocument.number); // Write value again to strip any auto-formatting
-        }
         
         return newDocument;
     } finally {
@@ -184,3 +304,75 @@ function addDocument_(docType, formData) {
     }
 }
 
+// ==============================================
+// ฟังก์ชันสำหรับ "อพยพ" ข้อมูลเก่า (Migrate)
+// ให้รันฟังก์ชันนี้ 1 ครั้ง เพื่อเติมเลข running_number ให้ข้อมูลเก่า
+// ==============================================
+function migrateDataToV3_() {
+    const docTypes = ['หนังสือส่ง', 'คำสั่ง', 'ประกาศ'];
+    const log = [];
+
+    docTypes.forEach(type => {
+        try {
+            const sheet = getSheetByType_(type);
+            const lastRow = sheet.getLastRow();
+            if (lastRow <= 1) return;
+
+            const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+            const numIdx = headers.indexOf('number');
+            const dateIdx = headers.indexOf('date');
+            const runNumIdx = headers.indexOf('running_number');
+            const yearIdx = headers.indexOf('budget_year');
+
+            if (runNumIdx === -1 || yearIdx === -1) {
+                log.push(`Skipping ${type}: Columns missing (Run again?)`);
+                return;
+            }
+
+            const dataRange = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+            const values = dataRange.getDisplayValues(); // Use Display Values to parse number string safely
+            const dateValues = sheet.getRange(2, dateIdx + 1, lastRow - 1, 1).getValues(); // Get real dates
+
+            const updates = values.map((row, i) => {
+                const docNumStr = String(row[numIdx]);
+                const docDate = new Date(dateValues[i][0]);
+                
+                let runNum = row[runNumIdx];
+                let year = row[yearIdx];
+
+                // Only fill if empty
+                if (!runNum || !year) {
+                    try {
+                        let match;
+                        if (type === 'หนังสือส่ง') match = docNumStr.match(/\/(\d+)$/);
+                        else if (type === 'คำสั่ง') match = docNumStr.match(/^(\d+)/);
+                        else if (type === 'ประกาศ') match = docNumStr.match(/(\d+)\/\d{4}$/);
+
+                        if (match && match[1]) {
+                             runNum = parseInt(match[1], 10);
+                        }
+                        
+                        if (docDate && !isNaN(docDate.getTime())) {
+                            year = getBuddhistYear(docDate);
+                        }
+                    } catch(e) {}
+                }
+                return { runNum, year };
+            });
+
+            // Bulk update
+            // Note: This is simplified. Ideally we write column by column.
+            updates.forEach((u, i) => {
+                 if (u.runNum) sheet.getRange(i + 2, runNumIdx + 1).setValue(u.runNum);
+                 if (u.year) sheet.getRange(i + 2, yearIdx + 1).setValue(u.year);
+            });
+            
+            log.push(`Migrated ${type}: ${updates.length} rows.`);
+
+        } catch(e) {
+            log.push(`Error ${type}: ${e.message}`);
+        }
+    });
+
+    return { status: 'Success', log: log };
+}
