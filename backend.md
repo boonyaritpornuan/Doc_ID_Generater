@@ -18,11 +18,15 @@ const ORDER_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "
 const NOTICE_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year"];
 
 
+
 function doGet(e) {
-  return ContentService.createTextOutput("Backend V3 is running. Use POST requests for data operations.");
+  return ContentService.createTextOutput("Backend V4.0 (Fixed) is running. Use POST requests for data operations.");
 }
 
 function doPost(e) {
+  // VERSION LOGGING to confirm deployment
+  Logger.log("EXECUTING BACKEND V4.0");
+
   if (!e || !e.postData || !e.postData.contents) {
     return createJsonResponse({ 
       error: 'Invalid request. This function must be triggered by a POST request.' 
