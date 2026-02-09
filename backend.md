@@ -229,7 +229,12 @@ function addDocument_(docType, formData) {
 
         const sheet = getSheetByType_(docType);
         const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-        const newRow = headers.map(header => newDocument[header] || '');
+        const newRow = headers.map(header => {
+            if (header === 'number' && newDocument[header]) {
+                return "'" + newDocument[header];
+            }
+            return newDocument[header] || '';
+        });
 
         sheet.appendRow(newRow);
         
