@@ -55,7 +55,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
     );
 
     const hasFilters = searchTerm || startDate || endDate;
-    const colSpan = selectedType === DocumentType.Book ? 6 : (selectedType === DocumentType.Notice ? 4 : 5);
+    const colSpan = selectedType === DocumentType.Book ? 7 : (selectedType === DocumentType.Notice ? 5 : 6);
 
     return (
         <div className="animate-fade-in w-full">
@@ -124,6 +124,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                             <th className="p-4 font-semibold text-gray-600">ลงวันที่</th>
                             <th className="p-4 font-semibold text-gray-600">เรื่อง</th>
                             <th className="p-4 font-semibold text-gray-600">ผู้รับผิดชอบ</th>
+                            <th className="p-4 font-semibold text-gray-600">ไฟล์แนบ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -142,6 +143,23 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                                     <td className="p-4 text-gray-700 whitespace-nowrap">{formatDate(new Date(doc.date))}</td>
                                     <td className="p-4 text-gray-800">{doc.subject}</td>
                                     <td className="p-4 text-gray-700">{doc.responsible}</td>
+                                    <td className="p-4">
+                                        {doc.folderUrl ? (
+                                            <a
+                                                href={doc.folderUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                                            >
+                                                <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                                                </svg>
+                                                ดูไฟล์
+                                            </a>
+                                        ) : (
+                                            <span className="text-gray-400">-</span>
+                                        )}
+                                    </td>
                                 </tr>
                             ))
                         ) : (

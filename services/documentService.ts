@@ -69,6 +69,7 @@ export const getDocuments = async (): Promise<Document[]> => {
             ...doc,
             date: new Date(doc.date),
             timestamp: new Date(doc.timestamp),
+            folderUrl: doc.folder_url || null,
         }));
     } catch (error) {
         console.error("Failed to fetch documents:", error);
@@ -76,3 +77,63 @@ export const getDocuments = async (): Promise<Document[]> => {
         return [];
     }
 }
+
+// === File Attachment ===
+
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result as string;
+            // Strip the data URL prefix (e.g. "data:application/pdf;base64,")
+            const base64 = result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+};
+
+export interface AttachmentPayload {
+    name: string;
+    mimeType: string;
+    base64: string;
+}
+
+export const uploadAttachments = async (
+    documentId: string,
+    docType: string,
+    docNumber: string,
+    files: File[]
+): Promise<{ folderUrl: string }> => {
+    checkScriptUrl();
+    try {
+        const attachments: AttachmentPayload[] = await Promise.all(
+            files.map(async (file) => ({
+                name: file.name,
+                mimeType: file.type || 'application/octet-stream',
+                base64: await fileToBase64(file),
+            }))
+        );
+
+        const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8',
+            },
+            body: JSON.stringify({
+                action: 'uploadAttachments',
+                documentId,
+                docType,
+                docNumber,
+                files: attachments,
+            }),
+        });
+
+        return await handleResponse(response);
+    } catch (error) {
+        console.error("Failed to upload attachments:", error);
+        alert(`เกิดข้อผิดพลาดในการอัปโหลดไฟล์: ${error.message}`);
+        throw error;
+    }
+};

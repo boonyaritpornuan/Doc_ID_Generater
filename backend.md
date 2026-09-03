@@ -1,8 +1,8 @@
 
 // ===============================================
-// โค้ดสำหรับระบบออกเลข V3 (ฉบับสมบูรณ์ที่สุด)
+// โค้ดสำหรับระบบออกเลข V4.1 (เพิ่มระบบแนบไฟล์)
 // แก้ไขปัญหา: เปลี่ยนไปใช้การแยกเก็บ "เลขที่" และ "ปีงบ" ออกจากกัน
-// ทำให้ไม่ต้องกังวลเรื่อง Format วันที่เพี้ยนอีกต่อไป
+// เพิ่ม: ระบบอัปโหลดไฟล์แนบไปเก็บใน Google Drive
 // ===============================================
 
 // *** SPREADSHEET ID ของคุณ (ใส่ให้แล้ว) ***
@@ -12,20 +12,23 @@ const BOOK_SHEET_NAME = 'หนังสือส่ง';
 const ORDER_SHEET_NAME = 'คำสั่ง';
 const NOTICE_SHEET_NAME = 'ประกาศ';
 
-// เพิ่มคอลัมน์ใหม่: running_number (เลขลำดับ) และ budget_year (ปีงบฯ) ต่อท้าย
-const BOOK_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "to", "responsible", "notes", "running_number", "budget_year"];
-const ORDER_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year"];
-const NOTICE_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year"];
+// เพิ่มคอลัมน์ใหม่: running_number, budget_year, folder_url
+const BOOK_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "to", "responsible", "notes", "running_number", "budget_year", "folder_url"];
+const ORDER_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year", "folder_url"];
+const NOTICE_HEADERS = ["id", "timestamp", "type", "number", "date", "subject", "responsible", "notes", "running_number", "budget_year", "folder_url"];
+
+// ชื่อ Root Folder ใน Google Drive สำหรับเก็บไฟล์แนบ
+const DRIVE_ROOT_FOLDER_NAME = 'เอกสารราชการ - ระบบออกเลข';
 
 
 
 function doGet(e) {
-  return ContentService.createTextOutput("Backend V4.0 (Fixed) is running. Use POST requests for data operations.");
+  return ContentService.createTextOutput("Backend V4.1 (File Attachments) is running. Use POST requests for data operations.");
 }
 
 function doPost(e) {
   // VERSION LOGGING to confirm deployment
-  Logger.log("EXECUTING BACKEND V4.0");
+  Logger.log("EXECUTING BACKEND V4.1 - File Attachments");
 
   if (!e || !e.postData || !e.postData.contents) {
     return createJsonResponse({ 
@@ -51,6 +54,16 @@ function doPost(e) {
       return createJsonResponse(newDocument);
     }
     
+    // ACTION สำหรับอัปโหลดไฟล์แนบ
+    if (action === 'uploadAttachments') {
+      const { documentId, docType, docNumber, files } = payload;
+      if (!documentId || !docType || !files || !Array.isArray(files)) {
+        throw new Error("Invalid post data for uploadAttachments. Missing documentId, docType, or files.");
+      }
+      const result = uploadAttachments_(documentId, docType, docNumber, files);
+      return createJsonResponse(result);
+    }
+
     // ACTION พิเศษสำหรับ Migrating ข้อมูลเก่า (เรียกครั้งเดียวพอ)
     if (action === 'migrateData') {
        const result = migrateDataToV3_();
@@ -115,9 +128,14 @@ function getSheetByType_(docType) {
     const finalCol = sheet.getLastColumn();
     const headersInRange = sheet.getRange(1, 1, 1, finalCol).getValues()[0];
     if (headersInRange.indexOf('running_number') === -1) {
-       // Append missing headers
        sheet.getRange(1, finalCol + 1).setValue('running_number');
        sheet.getRange(1, finalCol + 2).setValue('budget_year');
+    }
+    // เพิ่มคอลัมน์ folder_url ถ้ายังไม่มี
+    const updatedFinalCol = sheet.getLastColumn();
+    const updatedHeaders = sheet.getRange(1, 1, 1, updatedFinalCol).getValues()[0];
+    if (updatedHeaders.indexOf('folder_url') === -1) {
+       sheet.getRange(1, updatedFinalCol + 1).setValue('folder_url');
     }
   }
   return sheet;
@@ -306,6 +324,100 @@ function addDocument_(docType, formData) {
     } finally {
         lock.releaseLock();
     }
+}
+
+// ==============================================
+// ฟังก์ชันสำหรับอัปโหลดไฟล์แนบไปเก็บใน Google Drive
+// ==============================================
+
+function getOrCreateFolder_(parent, folderName) {
+  var folders = parent.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return parent.createFolder(folderName);
+}
+
+function uploadAttachments_(documentId, docType, docNumber, files) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(60000); // ให้เวลามากขึ้นสำหรับอัปโหลดไฟล์
+
+  try {
+    // 1. หา/สร้าง Root Folder
+    var rootFolder = getOrCreateFolder_(DriveApp.getRootFolder(), DRIVE_ROOT_FOLDER_NAME);
+    
+    // 2. หา/สร้าง Sub-folder ตามประเภทเอกสาร
+    var typeFolder = getOrCreateFolder_(rootFolder, docType);
+    
+    // 3. สร้าง Sub-folder ตามเลขที่เอกสาร
+    // ทำความสะอาดชื่อ folder (แทนที่ / ด้วย _)
+    var safeFolderName = docNumber ? String(docNumber).replace(/\//g, '_') : documentId;
+    var docFolder = getOrCreateFolder_(typeFolder, safeFolderName);
+    
+    // 4. วนลูปสร้างไฟล์ใน Google Drive
+    var uploadedFiles = [];
+    files.forEach(function(file) {
+      try {
+        var blob = Utilities.newBlob(
+          Utilities.base64Decode(file.base64),
+          file.mimeType,
+          file.name
+        );
+        var driveFile = docFolder.createFile(blob);
+        
+        // Set sharing: Anyone with the link can view
+        driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        
+        uploadedFiles.push({
+          name: driveFile.getName(),
+          url: driveFile.getUrl(),
+          id: driveFile.getId()
+        });
+      } catch(fileErr) {
+        Logger.log('Error uploading file ' + file.name + ': ' + fileErr.message);
+      }
+    });
+    
+    // 5. Set folder sharing too
+    docFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var folderUrl = docFolder.getUrl();
+    
+    // 6. อัปเดตคอลัมน์ folder_url ใน Sheet ที่ตรงกับ documentId
+    updateFolderUrl_(documentId, docType, folderUrl);
+    
+    return {
+      folderUrl: folderUrl,
+      uploadedFiles: uploadedFiles,
+      count: uploadedFiles.length
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateFolderUrl_(documentId, docType, folderUrl) {
+  var sheet = getSheetByType_(docType);
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+  
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var idIdx = headers.indexOf('id');
+  var folderUrlIdx = headers.indexOf('folder_url');
+  
+  if (idIdx === -1 || folderUrlIdx === -1) {
+    Logger.log('Cannot find id or folder_url column');
+    return;
+  }
+  
+  // อ่านคอลัมน์ id ทั้งหมดเพื่อหาแถวที่ตรง
+  var idValues = sheet.getRange(2, idIdx + 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < idValues.length; i++) {
+    if (String(idValues[i][0]) === String(documentId)) {
+      sheet.getRange(i + 2, folderUrlIdx + 1).setValue(folderUrl);
+      return;
+    }
+  }
+  Logger.log('Document ID not found in sheet: ' + documentId);
 }
 
 // ==============================================

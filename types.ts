@@ -16,6 +16,7 @@ export interface Document {
   responsible: string;
   notes?: string;
   circulate?: string;
+  folderUrl?: string;
 }
 
 export interface FormData {
