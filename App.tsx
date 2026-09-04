@@ -96,6 +96,10 @@ const App: React.FC = () => {
         setView('list');
     }, []);
 
+    const handleDocumentUpdated = useCallback((updatedDoc: Document) => {
+        setAllDocuments(prev => prev.map(doc => doc.id === updatedDoc.id ? updatedDoc : doc));
+    }, []);
+
     const handleLoginSuccess = (loggedInUser: User) => {
         setUser(loggedInUser);
         localStorage.setItem('user_session', JSON.stringify(loggedInUser));
@@ -137,7 +141,14 @@ const App: React.FC = () => {
                     <ResultPage document={createdDocument} onGoHome={handleGoHome} />
                 );
             case 'list':
-                return <DocumentListPage documents={allDocuments} onGoHome={handleGoHome} isLoading={isLoading} />;
+                return (
+                    <DocumentListPage 
+                        documents={allDocuments} 
+                        onGoHome={handleGoHome} 
+                        isLoading={isLoading} 
+                        onDocumentUpdated={handleDocumentUpdated}
+                    />
+                );
             case 'home':
             default:
                 return <HomePage onSelectDocType={handleSelectDocType} onViewAll={handleViewAll} />;

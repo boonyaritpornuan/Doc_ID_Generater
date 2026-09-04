@@ -1,17 +1,36 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Document, DocumentType } from '../types';
+import { UploadAttachmentModal } from './UploadAttachmentModal';
 
 interface DocumentListPageProps {
     documents: Document[];
     onGoHome: () => void;
     isLoading: boolean; // Add isLoading prop
+    onDocumentUpdated?: (updatedDoc: Document) => void;
 }
 
-const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome, isLoading }) => {
+const DocumentListPage: React.FC<DocumentListPageProps> = ({ 
+    documents, 
+    onGoHome, 
+    isLoading,
+    onDocumentUpdated 
+}) => {
     const [selectedType, setSelectedType] = useState<DocumentType>(DocumentType.Book);
     const [searchTerm, setSearchTerm] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [uploadModalDoc, setUploadModalDoc] = useState<Document | null>(null);
+    const [localDocuments, setLocalDocuments] = useState<Document[]>(documents);
+
+    useEffect(() => {
+        setLocalDocuments(documents);
+    }, [documents]);
+
+    const handleUploadSuccess = (updatedDoc: Document) => {
+        setLocalDocuments(prev => prev.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+        onDocumentUpdated?.(updatedDoc);
+        setUploadModalDoc(updatedDoc);
+    };
 
 
     const formatDate = (date: any) => {
@@ -51,7 +70,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
         const endFilterDate = parseBoundaryDate(endDate, true);
         const lowerSearchTerm = searchTerm.trim().toLowerCase();
 
-        return documents
+        return localDocuments
             .filter(doc => {
                 // 1. ตรวจสอบประเภทเอกสารให้ตรงกับที่เลือก
                 if (!doc.type || doc.type.trim() !== selectedType) {
@@ -116,7 +135,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                 const numB = parseInt(String(b.number || '').replace(/\D/g, ''), 10) || 0;
                 return numB - numA;
             });
-    }, [documents, selectedType, searchTerm, startDate, endDate]);
+    }, [localDocuments, selectedType, searchTerm, startDate, endDate]);
 
     const hasFilters = Boolean(searchTerm.trim() || startDate || endDate);
     const colSpan = selectedType === DocumentType.Book ? 7 : (selectedType === DocumentType.Notice ? 5 : 6);
@@ -223,19 +242,36 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                                     <td className="p-4 text-gray-700">{doc.responsible}</td>
                                     <td className="p-4">
                                         {doc.folderUrl ? (
-                                            <a
-                                                href={doc.folderUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                                            >
-                                                <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-                                                </svg>
-                                                ดูไฟล์
-                                            </a>
+                                            <div className="flex items-center gap-2">
+                                                <a
+                                                    href={doc.folderUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                                                >
+                                                    <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                                                    </svg>
+                                                    ดูไฟล์
+                                                </a>
+                                                <button
+                                                    onClick={() => setUploadModalDoc(doc)}
+                                                    title="แนบไฟล์เพิ่มเติมไปยัง Google Drive"
+                                                    className="inline-flex items-center gap-0.5 px-2 py-0.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors"
+                                                >
+                                                    + เพิ่ม
+                                                </button>
+                                            </div>
                                         ) : (
-                                            <span className="text-gray-400">-</span>
+                                            <button
+                                                onClick={() => setUploadModalDoc(doc)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-md border border-blue-200 hover:border-blue-600 transition-all duration-150 shadow-sm"
+                                            >
+                                                <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                </svg>
+                                                แนบไฟล์
+                                            </button>
                                         )}
                                     </td>
                                 </tr>
@@ -246,7 +282,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                                     <p className="text-xl text-gray-500">
                                         {hasFilters 
                                             ? "ไม่พบเอกสารที่ตรงกับเงื่อนไขการค้นหา" 
-                                            : `ยังไม่มีเอกสารประเภท "${selectedType}"`}
+                                             : `ยังไม่มีเอกสารประเภท "${selectedType}"`}
                                     </p>
                                     <p className="text-base text-gray-400 mt-2">
                                         {hasFilters
@@ -268,6 +304,14 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                     กลับหน้าหลัก
                 </button>
             </div>
+
+            {/* Upload Attachment Modal */}
+            <UploadAttachmentModal
+                document={uploadModalDoc}
+                isOpen={Boolean(uploadModalDoc)}
+                onClose={() => setUploadModalDoc(null)}
+                onSuccess={handleUploadSuccess}
+            />
         </div>
     );
 };
