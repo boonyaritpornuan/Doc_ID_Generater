@@ -14,47 +14,111 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
     const [endDate, setEndDate] = useState('');
 
 
-    const formatDate = (date: Date) => {
+    const formatDate = (date: any) => {
+        if (!date) return '-';
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return '-';
         return new Intl.DateTimeFormat('th-TH', {
             year: 'numeric',
             month: 'short',
             day: 'numeric',
             timeZone: 'Asia/Bangkok'
-        }).format(date);
+        }).format(d);
     };
 
-    const filteredDocuments = useMemo(() => documents
-        .filter(doc => {
-            if (doc.type !== selectedType) return false;
+    const handleClearFilters = () => {
+        setSearchTerm('');
+        setStartDate('');
+        setEndDate('');
+    };
 
-            const docDate = new Date(doc.date);
-            if (startDate) {
-                const startFilterDate = new Date(startDate);
-                startFilterDate.setHours(0, 0, 0, 0);
-                if (docDate < startFilterDate) return false;
-            }
-            if (endDate) {
-                const endFilterDate = new Date(endDate);
-                endFilterDate.setHours(23, 59, 59, 999);
-                if (docDate > endFilterDate) return false;
-            }
+    // แยกแปลงวันที่ YYYY-MM-DD ให้เป็น Date ตามเวลาท้องถิ่น ป้องกันปัญหา Timezone Offset
+    const parseBoundaryDate = (dateStr: string, isEndOfDay: boolean): Date | null => {
+        if (!dateStr) return null;
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return null;
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+        return isEndOfDay
+            ? new Date(year, month, day, 23, 59, 59, 999)
+            : new Date(year, month, day, 0, 0, 0, 0);
+    };
 
-            const lowerSearchTerm = searchTerm.toLowerCase();
-            if (searchTerm &&
-                !doc.number.toLowerCase().includes(lowerSearchTerm) &&
-                !doc.subject.toLowerCase().includes(lowerSearchTerm) &&
-                !(doc.responsible && doc.responsible.toLowerCase().includes(lowerSearchTerm))
-            ) {
-                return false;
-            }
+    const filteredDocuments = useMemo(() => {
+        const startFilterDate = parseBoundaryDate(startDate, false);
+        const endFilterDate = parseBoundaryDate(endDate, true);
+        const lowerSearchTerm = searchTerm.trim().toLowerCase();
 
-            return true;
-        })
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
-        [documents, selectedType, searchTerm, startDate, endDate]
-    );
+        return documents
+            .filter(doc => {
+                // 1. ตรวจสอบประเภทเอกสารให้ตรงกับที่เลือก
+                if (!doc.type || doc.type.trim() !== selectedType) {
+                    return false;
+                }
 
-    const hasFilters = searchTerm || startDate || endDate;
+                // 2. ตรวจสอบวันที่ (ถ้ามีการระบุตัวกรองวันที่)
+                if (startFilterDate || endFilterDate) {
+                    if (!doc.date) return false;
+                    const docDate = new Date(doc.date);
+                    const docTime = docDate.getTime();
+                    // หากเป็น Invalid Date ให้ตัดออกทันที ป้องกันข้อมูลไม่มีวันที่หลุดเข้ามา
+                    if (isNaN(docTime)) return false;
+
+                    if (startFilterDate && docTime < startFilterDate.getTime()) {
+                        return false;
+                    }
+                    if (endFilterDate && docTime > endFilterDate.getTime()) {
+                        return false;
+                    }
+                }
+
+                // 3. ตรวจสอบคำค้นหา (ค้นหาทั้ง เลขที่, เรื่อง, ผู้รับผิดชอบ, ถึง, หมายเหตุ, เวียน)
+                if (lowerSearchTerm) {
+                    const matchNumber = doc.number && String(doc.number).toLowerCase().includes(lowerSearchTerm);
+                    const matchSubject = doc.subject && String(doc.subject).toLowerCase().includes(lowerSearchTerm);
+                    const matchResponsible = doc.responsible && String(doc.responsible).toLowerCase().includes(lowerSearchTerm);
+                    const matchTo = doc.to && String(doc.to).toLowerCase().includes(lowerSearchTerm);
+                    const matchNotes = doc.notes && String(doc.notes).toLowerCase().includes(lowerSearchTerm);
+                    const matchCirculate = doc.circulate && String(doc.circulate).toLowerCase().includes(lowerSearchTerm);
+
+                    if (!matchNumber && !matchSubject && !matchResponsible && !matchTo && !matchNotes && !matchCirculate) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            .sort((a, b) => {
+                // เรียงลำดับ timestamp จากใหม่ไปเก่า (ป้องกัน NaN)
+                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+                const validTimeA = isNaN(timeA) ? 0 : timeA;
+                const validTimeB = isNaN(timeB) ? 0 : timeB;
+
+                if (validTimeB !== validTimeA) {
+                    return validTimeB - validTimeA;
+                }
+
+                // ถ้า timestamp เท่ากัน ให้ดูที่ date
+                const dateA = a.date ? new Date(a.date).getTime() : 0;
+                const dateB = b.date ? new Date(b.date).getTime() : 0;
+                const validDateA = isNaN(dateA) ? 0 : dateA;
+                const validDateB = isNaN(dateB) ? 0 : dateB;
+
+                if (validDateB !== validDateA) {
+                    return validDateB - validDateA;
+                }
+
+                // ถ้ายังเท่ากันอีก ให้เรียงตามเลขเอกสาร/ลำดับจากมากไปน้อย
+                const numA = parseInt(String(a.number || '').replace(/\D/g, ''), 10) || 0;
+                const numB = parseInt(String(b.number || '').replace(/\D/g, ''), 10) || 0;
+                return numB - numA;
+            });
+    }, [documents, selectedType, searchTerm, startDate, endDate]);
+
+    const hasFilters = Boolean(searchTerm.trim() || startDate || endDate);
     const colSpan = selectedType === DocumentType.Book ? 7 : (selectedType === DocumentType.Notice ? 5 : 6);
 
     return (
@@ -89,7 +153,7 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                 />
             </div>
 
-            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">จากวันที่</label>
                     <input
@@ -114,6 +178,20 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                 </div>
             </div>
 
+            {hasFilters && (
+                <div className="mb-6 flex justify-between items-center bg-blue-50 px-4 py-2.5 rounded-lg border border-blue-100">
+                    <span className="text-sm text-blue-800">
+                        พบเอกสารที่ตรงเงื่อนไข <strong>{filteredDocuments.length}</strong> รายการ
+                    </span>
+                    <button
+                        onClick={handleClearFilters}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1 transition-colors hover:underline"
+                    >
+                        ✕ ล้างตัวกรองทั้งหมด
+                    </button>
+                </div>
+            )}
+
             <div className="overflow-x-auto bg-white rounded-lg shadow">
                 <table className="w-full min-w-max text-left table-auto">
                     <thead className="border-b bg-gray-50">
@@ -136,11 +214,11 @@ const DocumentListPage: React.FC<DocumentListPageProps> = ({ documents, onGoHome
                             </tr>
                         ) : filteredDocuments.length > 0 ? (
                             filteredDocuments.map((doc, index) => (
-                                <tr key={doc.id} className={`border-b ${index % 2 === 0 ? '' : 'bg-blue-50/20'} hover:bg-blue-100/50 transition-colors`}>
+                                <tr key={`${doc.id || 'doc'}-${index}`} className={`border-b ${index % 2 === 0 ? '' : 'bg-blue-50/20'} hover:bg-blue-100/50 transition-colors`}>
                                     <td className="p-4 text-gray-800">{doc.type}</td>
                                     {selectedType === DocumentType.Book && <td className="p-4 text-gray-900 font-medium text-center">{doc.circulate}</td>}
                                     {selectedType !== DocumentType.Notice && <td className="p-4 text-gray-900 font-medium">{doc.number}</td>}
-                                    <td className="p-4 text-gray-700 whitespace-nowrap">{formatDate(new Date(doc.date))}</td>
+                                    <td className="p-4 text-gray-700 whitespace-nowrap">{formatDate(doc.date)}</td>
                                     <td className="p-4 text-gray-800">{doc.subject}</td>
                                     <td className="p-4 text-gray-700">{doc.responsible}</td>
                                     <td className="p-4">
