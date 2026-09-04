@@ -4,7 +4,7 @@
 // Fix: Explicitly typing SCRIPT_URL as `string` to prevent a TypeScript error.
 // The error occurs on line 23 because comparing a constant string literal to another string literal
 // is flagged as an impossible condition, as the value is known at compile time.
-const SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbyUR6OVdPY_fYbJPJP6qLZnqRNAI1BCz1SQjT18awBM8sujf9LzPdS2mW246yKh9Q/exec';
+const SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbwD2kXt3vxSALqAYuMsGedFZ9iBvr7Jl0VK5MPUpd_R6vJBzAyovMlV0B5cd6lZAa12/exec';
 // ===================================================================================
 
 
